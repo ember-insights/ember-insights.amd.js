@@ -1,0 +1,1 @@
+# ember-insights.amd.js
