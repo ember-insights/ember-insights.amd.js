@@ -1,0 +1,13 @@
+{
+  "name": "ember-insights",
+  "description": "Ember framework for measurement user-centered metrics",
+  "homepage": "http://ember-insights.github.io",
+  "main": "ember-insights.amd.min.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git", "url": "git://github.com/ember-insights/ember-insights.amd.js.git"
+  },
+  "ignore": [
+    "ember-insights", "node_modules", "tasks", "tmp", ".gitignore", "Gruntfile.js", "package.json"
+  ]
+}
