@@ -75,10 +75,10 @@ define("handler",
     };
   });
 define("matcher", 
-  ["ember","exports"],
-  function(__dependency1__, __exports__) {
+  ["exports"],
+  function(__exports__) {
     "use strict";
-    var Ember = __dependency1__["default"];
+    /* global Ember */
 
     function groupMatches(group, routeName, eventType, eventValueToMatch) {
       var routeNameNoIndex = routeName.replace('.index', '');
@@ -450,7 +450,7 @@ define("trackers/abstract-tracker",
     __exports__["default"] = AbstractTracker;
   });
 define("trackers/console", 
-  ["abstract-tracker","exports"],
+  ["trackers/abstract-tracker","exports"],
   function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
@@ -490,7 +490,7 @@ define("trackers/console",
     };
   });
 define("trackers/google", 
-  ["abstract-tracker","exports"],
+  ["trackers/abstract-tracker","exports"],
   function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
