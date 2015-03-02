@@ -25,22 +25,21 @@ define("handler",
   function(__exports__) {
     "use strict";
     function transitionHandler(data, tracker, settings) {
-      var trackType = settings.trackTransitionsAs;
-
-      if (trackType === 'event'    || trackType === 'both') {
-        tracker.sendEvent(
-          'ember_transition',
-          JSON.stringify({ from: data.oldRouteName, to: data.routeName })
-        );
-      }
-      if (trackType === 'pageview' || trackType === 'both') {
-        tracker.trackPageView(data.url);
+      switch (settings.trackTransitionsAs) {
+        case 'event':
+          tracker.sendEvent(
+            'transition', JSON.stringify({ from: data.oldRouteName, to: data.routeName })
+          );
+          break;
+        case 'pageview':
+          tracker.trackPageView(data.url);
+          break;
       }
     }
 
     function actionHandler(data, tracker, settings) {
       settings = settings || {};
-      var args = ['ember_action', data.actionName];
+      var args = ['action', data.actionName];
 
       var actionLabel = data.actionArguments[0];
       var actionValue = data.actionArguments[1];
@@ -76,10 +75,10 @@ define("handler",
     };
   });
 define("matcher", 
-  ["exports"],
-  function(__exports__) {
+  ["ember","exports"],
+  function(__dependency1__, __exports__) {
     "use strict";
-    /* global Ember */
+    var Ember = __dependency1__["default"];
 
     function groupMatches(group, routeName, eventType, eventValueToMatch) {
       var routeNameNoIndex = routeName.replace('.index', '');
@@ -356,9 +355,7 @@ define("runtime",
           optparse.basicOpts(settings);
           optparse.trackerOpts(settings);
 
-          if (settings.tracker._setFields) {
-            settings.tracker._setFields();
-          }
+          settings.tracker.applyAppFields();
 
           settings.mappings  = [];
           addon.configs[env] = settings;
@@ -414,100 +411,91 @@ define("trackers",
     __exports__.ConsoleTracker = ConsoleTracker;
     __exports__.GoogleTracker = GoogleTracker;
   });
-define("trackers/console", 
-  ["exports"],
-  function(__exports__) {
+define("trackers/abstract-tracker", 
+  ["../vendor/inheritance","exports"],
+  function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
 
-    function trackerFun() {
-      return function(){
-        console.log('Ember-Insights event');
-        console.log('\tAction: ', arguments[0]);
-        console.log('\tAction argument: ', arguments[1]);
-        if(arguments.length > 2){
-          console.log('\tAdditional arguments: ');
-          for(var i=2; i < arguments.length; i++){
-             console.log('\t\t', arguments[i]);
-          }
-        }
-      };
+    var Class = __dependency1__["default"];
+
+    function notYetImplemented(signature) {
+      Ember.warn("Tracker function '" + signature + "' is not supported");
     }
 
-    function trackingNamespace(name) {
-      return function(action) {
-        return (name ? name + '.' : '') + action;
-      };
-    }
+    var AbstractTracker = Class.extend({
+      isTracker: function() {
+        notYetImplemented('isTracker()');
+      },
+      getTracker: function() {
+        notYetImplemented('getTracker()');
+      },
+      set: function(key, value) { // jshint ignore:line
+        notYetImplemented('set(key, value)');
+      },
+      send: function(fieldNameObj) { // jshint ignore:line
+        notYetImplemented('send(fieldNameObj)');
+      },
+      sendEvent: function(category, action, label, value) { // jshint ignore:line
+        notYetImplemented('sendEvent(category, action, label, value)');
+      },
+      trackPageView: function(path, fieldNameObj) { // jshint ignore:line
+        notYetImplemented('trackPageView(path, fieldNameObj)');
+      },
+      applyAppFields: function() {
+        notYetImplemented('applyAppFields()');
+      }
+    });
 
+    __exports__["default"] = AbstractTracker;
+  });
+define("trackers/console", 
+  ["abstract-tracker","exports"],
+  function(__dependency1__, __exports__) {
+    "use strict";
+    /* global Ember */
+
+    var AbstractTracker = __dependency1__["default"];
+
+    function logger(label, params) {
+      var message = 'EmberInsights.ConsoleTracker.%@(%@)'.fmt(label, params);
+      Ember.Logger.log(message);
+    }
 
     __exports__["default"] = {
-      factory: function(settings) {
-
-        var tracker   = trackerFun(settings.trackerFun);
-        var namespace = trackingNamespace(settings.trackingNamespace);
-
-        // Runtime conveniences as a wrapper for tracker function
-        var wrapper = {
-          isTracker: function() {
-            return (tracker && typeof tracker === 'function');
-          },
+      factory: function() {
+        var Tracker = AbstractTracker.extend({
           getTracker: function() {
-            if (! this.isTracker()) {
-              Ember.debug("Can't find in `window` a `" + settings.trackerFun + "` function definition");
-            }
-            return tracker;
+            return logger;
           },
-
           set: function(key, value) {
-            tracker(namespace('set'), key, value);
+            logger('set', [key, value]);
           },
-
           send: function(fieldNameObj) {
-            fieldNameObj = fieldNameObj || {};
-            tracker(namespace('send'), fieldNameObj);
+            logger('send', [fieldNameObj]);
           },
           sendEvent: function(category, action, label, value) {
-            var fieldNameObj = {
-              'hitType':       'event',  // Required
-              'eventCategory': category, // Required
-              'eventAction':   action    // Required
-            };
-
-            if (label != null) {
-              fieldNameObj.eventLabel = label;
-              if (value != null) {
-                fieldNameObj.eventValue = value;
-              }
-            }
-
-            tracker(namespace('send'), fieldNameObj);
+            logger('sendEvent', [category, action, label, value]);
           },
           trackPageView: function(path, fieldNameObj) {
-            fieldNameObj = fieldNameObj || {};
-
-            if (!path) {
-              var loc = window.location;
-              path = loc.hash ? loc.hash.substring(1) : (loc.pathname + loc.search);
-            }
-
-            tracker(namespace('send'), 'pageview', path, fieldNameObj);
+            logger('trackPageView', ['pageview', path, fieldNameObj]);
+          },
+          applyAppFields: function() {
+            logger('applyAppFields');
           }
-        };
+        });
 
-
-        return wrapper;
-      },
-
-      trackerFun: trackerFun,
-      trackingNamespace: trackingNamespace
+        return new Tracker();
+      }
     };
   });
 define("trackers/google", 
-  ["exports"],
-  function(__exports__) {
+  ["abstract-tracker","exports"],
+  function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
+
+    var AbstractTracker = __dependency1__["default"];
 
     function trackerFun(trackerFun, global) {
       global = (global || window);
@@ -536,11 +524,10 @@ define("trackers/google",
         var namespace = trackingNamespace(settings.trackingNamespace);
 
         // Runtime conveniences as a wrapper for tracker function
-        var wrapper = {
-          _setFields: function() {
+        var Tracker = AbstractTracker.extend({
+          applyAppFields: function() {
             setFields(tracker, namespace, settings.fields);
           },
-
           isTracker: function() {
             return (tracker && typeof tracker === 'function');
           },
@@ -550,11 +537,9 @@ define("trackers/google",
             }
             return tracker;
           },
-
           set: function(key, value) {
             tracker(namespace('set'), key, value);
           },
-
           send: function(fieldNameObj) {
             fieldNameObj = fieldNameObj || {};
             tracker(namespace('send'), fieldNameObj);
@@ -585,14 +570,94 @@ define("trackers/google",
 
             tracker(namespace('send'), 'pageview', path, fieldNameObj);
           }
-        };
+        });
 
-
-        return wrapper;
+        return new Tracker();
       },
 
       trackerFun: trackerFun,
       trackingNamespace: trackingNamespace,
       setFields: setFields
     };
+  });
+define("vendor/inheritance", 
+  ["exports"],
+  function(__exports__) {
+    "use strict";
+    // jshint ignore: start
+
+    /* Simple JavaScript Inheritance
+    * By John Resig http://ejohn.org/
+    * MIT Licensed.
+    */
+    // Inspired by base2 and Prototype
+    // (function(){
+    var MainClass = (function(){
+      var initializing = false, fnTest = /xyz/.test(function(){xyz;}) ? /\b_super\b/ : /.*/;
+
+      // The base Class implementation (does nothing)
+      // this.Class = function(){};
+      var MainClass = function(){};
+
+      // Create a new Class that inherits from this class
+      // Class.extend = function(prop) {
+      MainClass.extend = function extendFunction(prop) {
+        var _super = this.prototype;
+
+        // Instantiate a base class (but only create the instance,
+        // don't run the init constructor)
+        initializing = true;
+        var prototype = new this();
+        initializing = false;
+
+        // Copy the properties over onto the new prototype
+        for (var name in prop) {
+          // Check if we're overwriting an existing function
+          prototype[name] = typeof prop[name] == "function" &&
+          typeof _super[name] == "function" && fnTest.test(prop[name]) ?
+          (function(name, fn){
+            return function() {
+              var tmp = this._super;
+
+              // Add a new ._super() method that is the same method
+              // but on the super-class
+              this._super = _super[name];
+
+              // The method only need to be bound temporarily, so we
+              // remove it when we're done executing
+              var ret = fn.apply(this, arguments);
+              this._super = tmp;
+
+              return ret;
+            };
+          })(name, prop[name]) :
+          prop[name];
+        }
+
+        // The dummy class constructor
+        function Class() {
+          // All construction is actually done in the init method
+          if ( !initializing && this.init )
+          this.init.apply(this, arguments);
+        }
+
+        // Populate our constructed prototype object
+        Class.prototype = prototype;
+
+        // Enforce the constructor to be what we expect
+        Class.prototype.constructor = Class;
+
+        // And make this class extendable
+        // Class.extend = arguments.callee;
+        Class.extend = extendFunction;
+
+        return Class;
+      };
+
+      return MainClass;
+    })();
+
+    __exports__["default"] = MainClass;
+
+    // jshint ignore: end
   });
