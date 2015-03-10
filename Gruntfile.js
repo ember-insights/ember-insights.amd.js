@@ -9,7 +9,8 @@ module.exports = function(grunt) {
     'rename:index',
     'transpile:amd',
     'concat:browser',
-    'string-replace:dsclean'
+    'string-replace:dsclean',
+    'string-replace:importTrackerWorkaround'
   ]);
 
   grunt.registerTask('dist', "Copy to /build, minify", [
