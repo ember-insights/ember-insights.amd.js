@@ -157,12 +157,6 @@ define("matcher",
     function processMatchedGroups(matchedGroups, addonSettings, eventType, eventParams){
         for (var i = 0, len = matchedGroups.length; i < len; i++) {
           var matchedGroup = matchedGroups[i].group;
-          var matchedKey   = matchedGroups[i].keyMatched;
-
-          // drop a line to the developer console
-          if (addonSettings.debug) {
-            Ember.debug("TRAP: ---- MATCHED key '" + matchedKey + "' in group '" + matchedGroup.name + "'");
-          }
 
           if (eventType === 'transition' && addonSettings.updateDocumentLocationOnTransitions) {
             matchedGroup.tracker.set('location', document.URL);
@@ -183,7 +177,6 @@ define("middleware",
   function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
-
     var getMatchedGroups = __dependency1__.getMatchedGroups;
     var processMatchedGroups = __dependency1__.processMatchedGroups;
 
@@ -208,11 +201,12 @@ define("middleware",
 
           // drop a line to the console log
           if (addon.settings.debug) {
-            var msg = "TRAP: '" + eventName + "' action";
-            var word = (type === 'action') ? " on '" : " to '";
-            if (data.oldRouteName) { msg += " from '" + data.oldRouteName + "' route (" + data.oldUrl + ")"; }
-            if (data.routeName)    { msg += word      + data.routeName    + "' route (" +    data.url + ")"; }
-            msg += matchedGroups.length ? '. Matches:' : '. No matches!';
+            var isMapped = (matchedGroups.length ? ' SEND' : ' TRAP');
+            var msg = "Ember-Insights%@: '%@'".fmt(isMapped, eventName);
+            if (data.oldRouteName) { msg += " from '%@':'%@'".fmt(data.oldRouteName, data.oldUrl); }
+            var prep = (type === 'action') ? 'action from' : 'to';
+            if (data.routeName)    { msg += " %@ '%@':'%@'".fmt(prep, data.routeName, data.url); }
+
             Ember.debug(msg);
           }
           processMatchedGroups(matchedGroups, addon.settings, type, data);
@@ -253,7 +247,7 @@ define("middleware",
           var newRouteName = appController.get('currentRouteName');
 
           Ember.run.scheduleOnce('routerTransitions', this, function() {
-            var newUrl = this.get('url');
+            var newUrl = (this.get('url') || '/');
             _handle('transition', {
               route:        this.container.lookup('route:' + newRouteName),
               routeName:    newRouteName,
@@ -290,6 +284,8 @@ define("optparse",
 
       mergeTrackerOpts: function(opts, basicOpts) {
         var assert, typeOf;
+
+        opts.debug = (opts.debug === undefined ? true : opts.debug);
 
         opts.trackerFun = (opts.trackerFun || basicOpts.trackerFun || 'ga');
         typeOf = typeof opts.trackerFun;
@@ -416,11 +412,10 @@ define("trackers/abstract-tracker",
   function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
-
     var Class = __dependency1__["default"];
 
     function notYetImplemented(signature) {
-      Ember.warn("Tracker function '" + signature + "' is not supported");
+      Ember.warn("function '" + signature + "' is not yet implemented");
     }
 
     var AbstractTracker = Class.extend({
@@ -433,14 +428,14 @@ define("trackers/abstract-tracker",
       set: function(key, value) { // jshint ignore:line
         notYetImplemented('set(key, value)');
       },
-      send: function(fieldNameObj) { // jshint ignore:line
-        notYetImplemented('send(fieldNameObj)');
+      send: function(fields) { // jshint ignore:line
+        notYetImplemented('send(fields)');
       },
       sendEvent: function(category, action, label, value) { // jshint ignore:line
         notYetImplemented('sendEvent(category, action, label, value)');
       },
-      trackPageView: function(path, fieldNameObj) { // jshint ignore:line
-        notYetImplemented('trackPageView(path, fieldNameObj)');
+      trackPageView: function(path, fields) { // jshint ignore:line
+        notYetImplemented('trackPageView(path, fields)');
       },
       applyAppFields: function() {
         notYetImplemented('applyAppFields()');
@@ -454,11 +449,10 @@ define("trackers/console",
   function(__dependency1__, __exports__) {
     "use strict";
     /* global Ember */
-
     var AbstractTracker = __dependency1__["default"];
 
     function logger(label, params) {
-      var message = 'EmberInsights.ConsoleTracker.%@(%@)'.fmt(label, params);
+      var message = 'LOG: Ember-Insights: ConsoleTracker.%@(%@)'.fmt(label, params);
       Ember.Logger.log(message);
     }
 
@@ -493,8 +487,6 @@ define("trackers/google",
   ["trackers/abstract-tracker","exports"],
   function(__dependency1__, __exports__) {
     "use strict";
-    /* global Ember */
-
     var AbstractTracker = __dependency1__["default"];
 
     function trackerFun(trackerFun, global) {
@@ -520,55 +512,44 @@ define("trackers/google",
     __exports__["default"] = {
       factory: function(settings) {
 
-        var tracker   = trackerFun(settings.trackerFun);
+        function tracker() { return trackerFun(settings.trackerFun); }
         var namespace = trackingNamespace(settings.trackingNamespace);
 
         // Runtime conveniences as a wrapper for tracker function
         var Tracker = AbstractTracker.extend({
           applyAppFields: function() {
-            setFields(tracker, namespace, settings.fields);
+            setFields(tracker(), namespace, settings.fields);
           },
           isTracker: function() {
-            return (tracker && typeof tracker === 'function');
+            return (tracker() && typeof tracker() === 'function');
           },
           getTracker: function() {
-            if (! this.isTracker()) {
-              Ember.debug("Can't find in `window` a `" + settings.trackerFun + "` function definition");
-            }
-            return tracker;
+            return tracker();
           },
           set: function(key, value) {
-            tracker(namespace('set'), key, value);
+            tracker()(namespace('set'), key, value);
           },
-          send: function(fieldNameObj) {
-            fieldNameObj = fieldNameObj || {};
-            tracker(namespace('send'), fieldNameObj);
+          send: function(fields) {
+            fields = fields || {};
+            tracker()(namespace('send'), fields);
           },
           sendEvent: function(category, action, label, value) {
-            var fieldNameObj = {
-              'hitType':       'event',  // Required
-              'eventCategory': category, // Required
-              'eventAction':   action    // Required
+            var fields = {
+              hitType:      'event',
+              eventCategory: category,
+              eventAction:   action,
+              eventLabel:    label,
+              eventValue:    value
             };
-
-            if (label != null) {
-              fieldNameObj.eventLabel = label;
-              if (value != null) {
-                fieldNameObj.eventValue = value;
-              }
-            }
-
-            tracker(namespace('send'), fieldNameObj);
+            this.send(fields);
           },
-          trackPageView: function(path, fieldNameObj) {
-            fieldNameObj = fieldNameObj || {};
-
+          trackPageView: function(path, fields) {
+            fields = fields || {};
             if (!path) {
               var loc = window.location;
               path = loc.hash ? loc.hash.substring(1) : (loc.pathname + loc.search);
             }
-
-            tracker(namespace('send'), 'pageview', path, fieldNameObj);
+            tracker()(namespace('send'), 'pageview', path, fields);
           }
         });
 
