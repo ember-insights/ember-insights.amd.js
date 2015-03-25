@@ -39,35 +39,27 @@ define("handler",
 
     function actionHandler(data, tracker, settings) {
       settings = settings || {};
-      var args = ['action', data.actionName];
-
       var actionLabel = data.actionArguments[0];
       var actionValue = data.actionArguments[1];
 
-      if (actionLabel != null) {
-        args[2] = actionLabel;
-        if (actionValue != null) {
-          args[3] = actionValue;
-        }
-      }
-
-      tracker.sendEvent.apply(tracker, args);
+      tracker.sendEvent('action', data.actionName, actionLabel, actionValue);
     }
 
 
     __exports__["default"] = {
       factory: function(settings) {
-        var handler = function(type, data, tracker) {
-          if (type === 'transition') {
-            transitionHandler(data, tracker, settings);
+        function defaultDispatcher(type, data, tracker) {
+          switch(type) {
+            case 'transition':
+              transitionHandler(data, tracker, settings);
+              break;
+            case 'action':
+              actionHandler(data, tracker, settings);
+              break;
           }
+        }
 
-          if (type === 'action') {
-            actionHandler(data, tracker, settings);
-          }
-        };
-
-        return handler;
+        return defaultDispatcher;
       },
 
       transitionHandler: transitionHandler,
@@ -161,8 +153,8 @@ define("matcher",
           if (eventType === 'transition' && addonSettings.updateDocumentLocationOnTransitions) {
             matchedGroup.tracker.set('location', document.URL);
           }
-          // handle particular (matched) insight
-          matchedGroup.handler(eventType, eventParams, matchedGroup.tracker);
+          // dispatches mapped action
+          matchedGroup.dispatch(eventType, eventParams, matchedGroup.tracker);
         }
     }
 
@@ -270,7 +262,7 @@ define("middleware",
     };
   });
 define("optparse", 
-  ["trackers/google","handler","exports"],
+  ["trackers/console","handler","exports"],
   function(__dependency1__, __dependency2__, __exports__) {
     "use strict";
     /* global Ember */
@@ -283,19 +275,9 @@ define("optparse",
       },
 
       mergeTrackerOpts: function(opts, basicOpts) {
-        var assert, typeOf;
+        var assert;
 
         opts.debug = (opts.debug === undefined ? true : opts.debug);
-
-        opts.trackerFun = (opts.trackerFun || basicOpts.trackerFun || 'ga');
-        typeOf = typeof opts.trackerFun;
-        assert = (typeOf === 'function' || typeOf === 'string');
-        Ember.assert("'trackerFun' should be either a function or string option", assert);
-
-        opts.trackingNamespace = (opts.trackingNamespace || basicOpts.trackingNamespace || '');
-        typeOf = typeof opts.trackingNamespace;
-        assert = (typeOf === 'string');
-        Ember.assert("'trackingNamespace' should be a string option", assert);
 
         opts.trackerFactory = (opts.trackerFactory || basicOpts.trackerFactory || DefaultTracker.factory);
         assert = (typeof opts.trackerFactory === 'function');
@@ -318,12 +300,10 @@ define("optparse",
         return opts;
       },
 
-      handlerOpts: function(opts) {
-        var assert;
-
-        opts.handler = (opts.handler || DefaultHandler.factory(opts));
-        assert = (typeof opts.handler === 'function');
-        Ember.assert("'handler' should be a function", assert);
+      dispatcherOpts: function(opts) {
+        opts.dispatch = (opts.dispatch || DefaultHandler.factory(opts));
+        var assert = (typeof opts.dispatch === 'function');
+        Ember.assert("'dispatch' should be a function", assert);
 
         return opts;
       }
@@ -351,8 +331,6 @@ define("runtime",
           optparse.basicOpts(settings);
           optparse.trackerOpts(settings);
 
-          settings.tracker.applyAppFields();
-
           settings.mappings  = [];
           addon.configs[env] = settings;
 
@@ -361,15 +339,11 @@ define("runtime",
         track: function(mapping) {
           Ember.assert("Can't find `insights` property inside", mapping.insights);
 
-          // fields params are not yet implemented,
-          // - https://github.com/roundscope/ember-insights/issues/56
-          delete mapping.fields;
-
           mapping.insights = Ember.Object.create(mapping.insights);
 
           // apply defaults
           optparse.mergeTrackerOpts(mapping, _settings);
-          optparse.handlerOpts(mapping);
+          optparse.dispatcherOpts(mapping);
 
           // setup tracking mapping
           _settings.mappings.push(mapping);
@@ -436,9 +410,6 @@ define("trackers/abstract-tracker",
       },
       trackPageView: function(path, fields) { // jshint ignore:line
         notYetImplemented('trackPageView(path, fields)');
-      },
-      applyAppFields: function() {
-        notYetImplemented('applyAppFields()');
       }
     });
 
@@ -473,9 +444,6 @@ define("trackers/console",
           },
           trackPageView: function(path, fieldNameObj) {
             logger('trackPageView', ['pageview', path, fieldNameObj]);
-          },
-          applyAppFields: function() {
-            logger('applyAppFields');
           }
         });
 
@@ -509,16 +477,19 @@ define("trackers/google",
       }
     }
 
-    __exports__["default"] = {
-      factory: function(settings) {
+    function _buildFactory(trackerOptions) {
+      trackerOptions = trackerOptions || {};
 
-        function tracker() { return trackerFun(settings.trackerFun); }
-        var namespace = trackingNamespace(settings.trackingNamespace);
+      return function(settings) { // jshint ignore:line
+        function tracker() { return trackerFun(trackerOptions.trackerFun || 'ga'); }
+        var namespace = trackingNamespace(trackerOptions.name || '');
 
         // Runtime conveniences as a wrapper for tracker function
         var Tracker = AbstractTracker.extend({
-          applyAppFields: function() {
-            setFields(tracker(), namespace, settings.fields);
+          init: function() {
+            if (trackerOptions.fields) {
+              setFields(tracker(), namespace, trackerOptions.fields);
+            }
           },
           isTracker: function() {
             return (tracker() && typeof tracker() === 'function');
@@ -554,6 +525,14 @@ define("trackers/google",
         });
 
         return new Tracker();
+      };
+    }
+
+    __exports__["default"] = {
+      factory: _buildFactory(),
+
+      with: function(trackerOptions) {
+        return _buildFactory(trackerOptions);
       },
 
       trackerFun: trackerFun,
