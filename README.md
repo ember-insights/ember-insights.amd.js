@@ -8,6 +8,6 @@ This is AMD package of the https://github.com/ember-insights/ember-insights
 
 ## Acknowledgement
 
-Product of Roundscope Ukraine LLC. HEAD is https://github.com/ember-insights/ember-insights. Based on https://github.com/roundscope/web-engineering mastery.
+HEAD is https://github.com/ember-insights/ember-insights.
 
 [![Analytics](https://ga-beacon.appspot.com/UA-60632001-5/ember-insights/ember-insights.amd.js/README)](https://github.com/igrigorik/ga-beacon)
